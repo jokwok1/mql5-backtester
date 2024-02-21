@@ -21,3 +21,4 @@ ATR based stop loss is used, where the stop loss is 1x ATR below entry price for
 2) Compounding vs Fixed lot size
 3) Variable Stop Loss / Take Profit multiplier
 4) Parameters of MACD / EMA can be varied
+5) Trade is entered at the start of a new candle
