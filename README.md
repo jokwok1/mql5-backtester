@@ -15,6 +15,11 @@ This is a discretionary startegy that relies on the MACD and EMA as entry signal
 3) If there is a dhort entry, first check if there are any trades open, if there is a long trade, close long trade and enter new trade. If there is a short trade, this short entry is considered invalid
 4) Exit when MACD lines crosses above the signal Line 
 
+//----Trade Management----//
+1) 2 Trades are entered when entry condition are met. User can choose between Static or Trailing Stop Loss
+2) In the static option, a fixed risk to reward was of 2:1 will be used
+3) In the trailing option, 1 Trade will be will be entered with a 2:1 risk to reward ratio, while the other trade has no trade profit. When the take profit of the first trade is Hit, the Stop Loss of the second trade will be moved to break even price and a 1x ATR trailing Stop loss will be implemented 
+
 //----Risk Management----//
 ATR based stop loss is used, where the stop loss is 1x ATR below entry price for long trades and 1x ATR above entry price for short trade. A 1:2 risk to reward ratio is used. By default a 2% risk per trade is used 
 
