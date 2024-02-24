@@ -29,3 +29,6 @@ ATR based stop loss is used, where the stop loss is 1x ATR below entry price for
 3) Variable Stop Loss / Take Profit multiplier
 4) Parameters of MACD / EMA can be varied
 5) Trade is entered at the start of a new candle
+
+//----Notes----//
+1) Trade is entered when a the previous candle closes and the new candle opens. Depending on your broker, the trading window is different from the candle opening time. This may cause an invalid trade entry when market is closed. A timer is added in the EA which can be adjust based on the difference in timing of candle open and trading Open.
