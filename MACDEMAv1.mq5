@@ -27,6 +27,7 @@ CTrade   *Trade;           //Declaire Trade as pointer to CTrade class
 input int                InpMagicNumber  = 2000001;     //Unique identifier for this expert advisor
 input string             InpTradeComment = __FILE__;    //Optional comment for trades
 input ENUM_APPLIED_PRICE InpAppliedPrice = PRICE_CLOSE; //Applied price for indicators
+input int                MinDelay        = 4;           //Delay in minutes of trade open and candle open
 
 //Global Variables
 string          IndicatorMetrics    = "";
@@ -122,6 +123,142 @@ void OnDeinit(const int reason)
 void OnTick()
   {
 //---
+   //Counts the number of ticks received  
+   TicksReceivedCount++; 
+   
+   //Checks for new candle
+   bool IsNewCandle = false;
+   if(TimeLastTickProcessed != iTime(Symbol(),Period(),0))
+   {
+      IsNewCandle = true;
+      TimeLastTickProcessed=iTime(Symbol(),Period(),0);
+   }
+   
+   //If there is a new candle, process any trades
+   if(IsNewCandle == true)
+   {
+      //Counts the number of ticks processed
+      TicksProcessedCount++;
+
+      //Check if position is still open. If not open, return 0.
+      if (!PositionSelectByTicket(TicketNumber) && !PositionSelectByTicket(TicketNumber2)) {
+         TicketNumber = 0;
+         TicketNumber2 = 0;
+      } 
+   
+      //Initiate String for indicatorMetrics Variable. This will reset variable each time OnTick function runs.
+      IndicatorMetrics ="";  
+      StringConcatenate(IndicatorMetrics,Symbol()," | Last Processed: ",TimeLastTickProcessed," | Open Ticket: ", TicketNumber);
+
+      //Money Management - ATR
+      double CurrentAtr = GetATRValue(); //Gets ATR value double using custom function - convert double to string as per symbol digits
+      StringConcatenate(IndicatorMetrics, IndicatorMetrics, " | ATR: ", CurrentAtr);
+
+      //Strategy Trigger - MACD
+      string OpenSignalMacd = GetMacdOpenSignal(); //Variable will return Long or Short Bias only on a trigger/cross event 
+      StringConcatenate(IndicatorMetrics, IndicatorMetrics, " | MACD Bias: ", OpenSignalMacd); //Concatenate indicator values to output comment for user   
+   
+      //Strategy Filter - EMA
+      string OpenSignalEma = GetEmaOpenSignal(); //Variable will return long or short bias if close is above or below EMA.
+      StringConcatenate(IndicatorMetrics, IndicatorMetrics, " | EMA Bias: ", OpenSignalEma); //Concatenate indicator values to output comment for user
+   
    
   }
 //+------------------------------------------------------------------+
+
+//+------------------------------------------------------------------+
+//| Custom function                                                  |
+//+------------------------------------------------------------------+
+//Custom Function to get ATR value
+double GetATRValue()
+{
+   //Set symbol string and indicator buffers
+   string    CurrentSymbol   = Symbol();
+   const int StartCandle     = 0;
+   const int RequiredCandles = 3; //How many candles are required to be stored in Expert 
+
+   //Indicator Variables and Buffers
+   const int IndexAtr        = 0; //ATR Value
+   double    BufferAtr[];         //[prior,current confirmed,not confirmed] 
+
+   //Populate buffers for ATR Value; check errors
+   bool FillAtr = CopyBuffer(HandleAtr,IndexAtr,StartCandle,RequiredCandles,BufferAtr); //Copy buffer uses oldest as 0 (reversed)
+   if(FillAtr==false)return(0);
+
+   //Find ATR Value for Candle '1' Only
+   double CurrentAtr   = NormalizeDouble(BufferAtr[1],5);
+
+   //Return ATR Value
+   return(CurrentAtr);
+}
+
+//Custom Function to get MACD signals
+string GetMacdOpenSignal()
+{
+   //Set symbol string and indicator buffers
+   string    CurrentSymbol    = Symbol();
+   const int StartCandle      = 0;
+   const int RequiredCandles  = 3; //How many candles are required to be stored in Expert 
+   
+   //Indicator Variables and Buffers
+   const int IndexMacd        = 0; //Macd Line
+   const int IndexSignal      = 1; //Signal Line
+   double    BufferMacd[];         //[prior,current confirmed,not confirmed]    
+   double    BufferSignal[];       //[prior,current confirmed,not confirmed]       
+   
+   //Define Macd and Signal lines, from not confirmed candle 0, for 3 candles, and store results 
+   bool      FillMacd   = CopyBuffer(HandleMacd,IndexMacd,  StartCandle,RequiredCandles,BufferMacd);
+   bool      FillSignal = CopyBuffer(HandleMacd,IndexSignal,StartCandle,RequiredCandles,BufferSignal);
+   if(FillMacd==false || FillSignal==false) 
+      return "Buffer Not Full MACD"; // If buffers are not completely filled, return to end onTick
+
+   //Find required Macd signal lines and normalize to 10 places to prevent rounding errors in crossovers
+   double    CurrentMacd   = NormalizeDouble(BufferMacd[1],10);
+   double    CurrentSignal = NormalizeDouble(BufferSignal[1],10);
+   double    PriorMacd     = NormalizeDouble(BufferMacd[0],10);
+   double    PriorSignal   = NormalizeDouble(BufferSignal[0],10);
+   double    PriorClose = NormalizeDouble(iClose(Symbol(),Period(),2), 10);
+   double    CurrentClose = NormalizeDouble(iClose(Symbol(),Period(),1), 10);
+ 
+   // MAIN ERROR OF OCR is that they are reentering trades at the same time
+   //Submit Macd Long and Short Trades
+   //If MACD cross over Signal Line and cross occurs below 0 line - Long                                    // Code for one candle rule
+   if((PriorMacd <= PriorSignal && CurrentMacd > CurrentSignal && CurrentMacd < 0 && CurrentSignal < 0) || (OCRMacd <= OCRSignal && PriorMacd > PriorSignal && PriorMacd < 0 && PriorSignal < 0 && CurrentClose <= PriorClose))
+      return   "Long";
+   //If MACD cross under Signal Line and cross occurs above 0 line- Short
+   else if((PriorMacd >= PriorSignal && CurrentMacd < CurrentSignal && CurrentMacd > 0 && CurrentSignal > 0) || (OCRMacd >= OCRSignal && PriorMacd < PriorSignal && PriorMacd > 0 && PriorSignal > 0 && CurrentClose >= PriorClose))
+      return   "Short";
+   else
+   //If no cross of MACD and Signal Line - No Trades
+      return   "No Trade";
+}
+
+//Custom function that returns long and short signals based off EMA and Close price.
+string GetEmaOpenSignal()
+{
+   //Set symbol string and indicator buffers
+   string    CurrentSymbol    = Symbol();
+   const int StartCandle      = 0;
+   const int RequiredCandles  = 2; //How many candles are required to be stored in Expert 
+   
+   //Indicator Variables and Buffers
+   const int IndexEma         = 0; //EMA Line
+   double    BufferEma [];         //[current confirmed,not confirmed]    
+
+   //Define EMA, from not confirmed candle 0, for 2 candles, and store results 
+   bool      FillEma   = CopyBuffer(HandleEma,IndexEma,  StartCandle,RequiredCandles,BufferEma);
+   if(FillEma==false) 
+      return "Buffer Not Full Ema"; //If buffers are not completely filled, return to end onTick
+
+   //Gets the current confirmed EMA value
+   double CurrentEma   = NormalizeDouble(BufferEma[0],10);
+   double CurrentClose = NormalizeDouble(iClose(Symbol(),Period(),1), 10);
+
+   //Submit Ema Long and Short Trades
+   if(CurrentClose > CurrentEma)
+      return("Long");
+   else if (CurrentClose < CurrentEma)
+      return("Short");
+   else
+      return("No Trade");
+}
