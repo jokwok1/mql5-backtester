@@ -121,7 +121,7 @@ void OnDeinit(const int reason)
 //| Expert tick function                                             |
 //+------------------------------------------------------------------+
 void OnTick()
-  {
+{
 //---
    //Counts the number of ticks received  
    TicksReceivedCount++; 
@@ -144,16 +144,16 @@ void OnTick()
       if (!PositionSelectByTicket(TicketNumber) && !PositionSelectByTicket(TicketNumber2)) {
          TicketNumber = 0;
          TicketNumber2 = 0;
-      } 
+    } 
    
       //Initiate String for indicatorMetrics Variable. This will reset variable each time OnTick function runs.
       IndicatorMetrics ="";  
       StringConcatenate(IndicatorMetrics,Symbol()," | Last Processed: ",TimeLastTickProcessed," | Open Ticket: ", TicketNumber);
-
+   
       //Money Management - ATR
       double CurrentAtr = GetATRValue(); //Gets ATR value double using custom function - convert double to string as per symbol digits
       StringConcatenate(IndicatorMetrics, IndicatorMetrics, " | ATR: ", CurrentAtr);
-
+   
       //Strategy Trigger - MACD
       string OpenSignalMacd = GetMacdOpenSignal(); //Variable will return Long or Short Bias only on a trigger/cross event 
       StringConcatenate(IndicatorMetrics, IndicatorMetrics, " | MACD Bias: ", OpenSignalMacd); //Concatenate indicator values to output comment for user   
@@ -161,9 +161,88 @@ void OnTick()
       //Strategy Filter - EMA
       string OpenSignalEma = GetEmaOpenSignal(); //Variable will return long or short bias if close is above or below EMA.
       StringConcatenate(IndicatorMetrics, IndicatorMetrics, " | EMA Bias: ", OpenSignalEma); //Concatenate indicator values to output comment for user
-   
-   
+      
+      //EMA Confirmation Check, if C2 Check is false, no EMA filter used
+      if (OpenSignalEma == "Long" || C2_Check_Conf == false)
+         C2_L_Check = true; 
+      else 
+         C2_L_Check = false;
+      if (OpenSignalEma == "Short" || C2_Check_Conf == false)
+         C2_S_Check = true;  
+      else 
+         C2_S_Check = false;
+         
+      //Check if any Long / Short Trades are open
+      bool checkLong  = IsLongTradeOpen(); 
+      bool checkShort = IsShortTradeOpen();   
+      
+      //Trade Entries Population
+      bool            LongEntry = false; // This is used to determine standard entries based on C1 and OCR
+      bool            ShortEntry = false; // have to recall on every new candle
+      int totalTrades = CheckTrades();   
+      
+       //Enter trades and return position ticket number
+      if (Period() >= PERIOD_D1){  //checks if the period is less than the daily TF, if not, delay added to ensure trades entered during trade Open
+         while(TimeCurrent() <= iTime(Symbol(),Period(),0) + (MinDelay*60)) 
+            Sleep(1000); // delay by 4 mins which give the trading open for daily TF
+      }
+      
+      // Closes Trade based on exit from MACD Crossing
+      if (OpenSignalMacd == "Short" && checkLong == true)
+         if (totalTrades == 2){
+            ProcessTradeClose();
+            ProcessTradeClose();
+         }
+         else if (totalTrades == 1)
+            ProcessTradeClose();
+      if (OpenSignalMacd == "Long" && checkShort == true)
+         if (totalTrades == 2){
+            ProcessTradeClose();
+            ProcessTradeClose();
+         }
+         else if (totalTrades == 1)
+            ProcessTradeClose(); 
+      
+      totalTrades = CheckTrades(); //Call again to check no. of trades after closing
+      
+      if(OpenSignalMacd == "Long" && C2_L_Check == true && totalTrades <= 0)
+         LongEntry = true;
+      else if (OpenSignalMacd == "Short" && C2_S_Check == true && totalTrades <= 0)
+         ShortEntry = true;
+      
+      if(LongEntry == true) {
+         ProcessTradeClose();
+         if(TslCheck == true) { // 2 Trades Entered for Break Even and Trailing Stop Loss Functionality
+            TicketNumber = ProcessTradeOpen(ORDER_TYPE_BUY,CurrentAtr,1, Magic1);
+            TicketNumber2 = ProcessTradeOpen(ORDER_TYPE_BUY,CurrentAtr,0, Magic2);
+         } else if(TslCheck == false) {
+            TicketNumber = ProcessTradeOpen(ORDER_TYPE_BUY,CurrentAtr,1, Magic1);
+            TicketNumber2 = ProcessTradeOpen(ORDER_TYPE_BUY,CurrentAtr,1, Magic2); 
+         }
+      }   
+      else if(ShortEntry == true) {
+         ProcessTradeClose();
+         if(TslCheck == true) { // 2 Trades Entered for Break Even and Trailing Stop Loss Functionality
+            TicketNumber = ProcessTradeOpen(ORDER_TYPE_SELL,CurrentAtr,1, Magic1); 
+            TicketNumber2 = ProcessTradeOpen(ORDER_TYPE_SELL,CurrentAtr,0, Magic2);
+         } else if(TslCheck == false) {  
+            TicketNumber = ProcessTradeOpen(ORDER_TYPE_SELL,CurrentAtr,1, Magic1); 
+            TicketNumber2 = ProcessTradeOpen(ORDER_TYPE_SELL,CurrentAtr,1, Magic2);   
+         }
+      }
+      //Adjust Open Positions - Trailing Stop Loss
+      if(TslCheck == true)
+         AdjustTsl(TicketNumber2, CurrentAtr, AtrLossMulti, Magic2, totalTrades);
   }
+  
+   //Comment for user
+   Comment("\n\rExpert: ", InpMagicNumber, "\n\r",
+         "MT5 Server Time: ", TimeCurrent(), "\n\r",
+         "Ticks Received: ", TicksReceivedCount,"\n\r",
+         "Ticks Processed: ", TicksProcessedCount,"\n\r"
+         "Symbols Traded: \n\r", 
+         IndicatorMetrics);       
+}
 //+------------------------------------------------------------------+
 
 //+------------------------------------------------------------------+
@@ -220,13 +299,12 @@ string GetMacdOpenSignal()
    double    PriorClose = NormalizeDouble(iClose(Symbol(),Period(),2), 10);
    double    CurrentClose = NormalizeDouble(iClose(Symbol(),Period(),1), 10);
  
-   // MAIN ERROR OF OCR is that they are reentering trades at the same time
    //Submit Macd Long and Short Trades
-   //If MACD cross over Signal Line and cross occurs below 0 line - Long                                    // Code for one candle rule
-   if((PriorMacd <= PriorSignal && CurrentMacd > CurrentSignal && CurrentMacd < 0 && CurrentSignal < 0) || (OCRMacd <= OCRSignal && PriorMacd > PriorSignal && PriorMacd < 0 && PriorSignal < 0 && CurrentClose <= PriorClose))
+   //If MACD cross over Signal Line and cross occurs below 0 line - Long                                   
+   if(PriorMacd <= PriorSignal && CurrentMacd > CurrentSignal && CurrentMacd < 0 && CurrentSignal < 0)
       return   "Long";
    //If MACD cross under Signal Line and cross occurs above 0 line- Short
-   else if((PriorMacd >= PriorSignal && CurrentMacd < CurrentSignal && CurrentMacd > 0 && CurrentSignal > 0) || (OCRMacd >= OCRSignal && PriorMacd < PriorSignal && PriorMacd > 0 && PriorSignal > 0 && CurrentClose >= PriorClose))
+   else if(PriorMacd >= PriorSignal && CurrentMacd < CurrentSignal && CurrentMacd > 0 && CurrentSignal > 0) 
       return   "Short";
    else
    //If no cross of MACD and Signal Line - No Trades
@@ -261,4 +339,187 @@ string GetEmaOpenSignal()
       return("Short");
    else
       return("No Trade");
+}
+
+//Processes open trades for buy and sell
+ulong ProcessTradeOpen(ENUM_ORDER_TYPE OrderType, double CurrentAtr,int TP, long magic)
+{
+   //Set symbol string and variables
+   string CurrentSymbol   = Symbol();  
+   double Price           = 0;
+   double StopLossPrice   = 0;
+   double TakeProfitPrice = 0;
+
+   //Get price, stop loss, take profit for open and close orders
+   if(OrderType == ORDER_TYPE_BUY)
+   {
+      Price           = NormalizeDouble(SymbolInfoDouble(CurrentSymbol, SYMBOL_ASK), Digits());
+      StopLossPrice   = NormalizeDouble(Price - CurrentAtr*AtrLossMulti, Digits());
+      TakeProfitPrice = NormalizeDouble(Price + CurrentAtr*AtrProfitMulti, Digits());
+   }
+   else if(OrderType == ORDER_TYPE_SELL)
+   {
+      Price           = NormalizeDouble(SymbolInfoDouble(CurrentSymbol, SYMBOL_BID), Digits());
+      StopLossPrice   = NormalizeDouble(Price + CurrentAtr*AtrLossMulti, Digits());
+      TakeProfitPrice = NormalizeDouble(Price - CurrentAtr*AtrProfitMulti, Digits());  
+   }
+   
+   //Get lot size
+   double LotSize = OptimalLotSize(CurrentSymbol,Price,StopLossPrice);
+   
+   //Exit any trades that are currently open. Enter new trade.
+   Trade.SetExpertMagicNumber(magic);
+   if(TP == 1){  // Static Stop Loss
+      Trade.PositionOpen(CurrentSymbol,OrderType,LotSize,Price,StopLossPrice,TakeProfitPrice,InpTradeComment);
+   }
+   else if(TP == 0){  // Trailing Stop Loss
+      Trade.PositionOpen(CurrentSymbol,OrderType,LotSize,Price,StopLossPrice,0 ,InpTradeComment);
+   }
+
+   //Get Position Ticket Number
+   ulong  Ticket = PositionGetTicket(PositionsTotal() - 1);
+
+   //Add in any error handling
+   Print("Trade Processed For ", CurrentSymbol," OrderType ",OrderType, " Lot Size ", LotSize, " Ticket ", Ticket);
+
+   // Return ticket number
+   return(Ticket);
+}
+
+
+void ProcessTradeClose() {
+   //Set symbol string and variables
+   string CurrentSymbol   = Symbol();
+   Trade.PositionClose(CurrentSymbol);
+}
+
+
+//Finds the optimal lot size for the trade 
+//https://www.youtube.com/watch?v=Zft8X3htrcc&t=724s
+double OptimalLotSize(string CurrentSymbol, double EntryPrice, double StopLoss)
+{
+   //Set symbol string and calculate point value
+   double TickSize      = SymbolInfoDouble(CurrentSymbol,SYMBOL_TRADE_TICK_SIZE);
+   double TickValue     = SymbolInfoDouble(CurrentSymbol,SYMBOL_TRADE_TICK_VALUE);
+   if(SymbolInfoInteger(CurrentSymbol,SYMBOL_DIGITS) <= 3)  // Handle JPY pairs
+        TickValue = TickValue/100;
+   double PointAmount   = SymbolInfoDouble(CurrentSymbol,SYMBOL_POINT);
+   double TicksPerPoint = TickSize/PointAmount;
+   double PointValue    = TickValue/TicksPerPoint;
+
+   //Calculate risk based off entry and stop loss level by pips
+   double RiskPoints = MathAbs((EntryPrice - StopLoss)/TickSize);
+      
+   //Set risk model - Fixed or compounding
+   if(RiskCompounding == true)
+      CurrentEquityRisk = AccountInfoDouble(ACCOUNT_EQUITY);
+   else
+      CurrentEquityRisk = StartingEquity; 
+
+   //Calculate total risk amount in dollars
+   double RiskAmount = CurrentEquityRisk * MaxLossPrc;
+
+   //Calculate lot size
+   double RiskLots   = NormalizeDouble(0.5*RiskAmount/(RiskPoints*PointValue),2);
+
+   //Print values in Journal to check if operating correctly
+   PrintFormat("TickSize=%f,TickValue=%f,PointAmount=%f,TicksPerPoint=%f,PointValue=%f,",
+                  TickSize,TickValue,PointAmount,TicksPerPoint,PointValue);   
+   PrintFormat("EntryPrice=%f,StopLoss=%f,RiskPoints=%f,RiskAmount=%f,RiskLots=%f,",
+                  EntryPrice,StopLoss,RiskPoints,RiskAmount,RiskLots);   
+
+   //Return optimal lot size
+   return RiskLots;
+}
+
+// Check if there is an existing long trade
+bool IsLongTradeOpen() {
+    for (int i = 0; i < PositionsTotal(); i++) {
+        ulong ticket = PositionGetTicket(i);
+        if (ticket > 0 && PositionGetInteger(POSITION_TYPE, ticket) == POSITION_TYPE_BUY) {
+            return true; // Long trade is already open
+        }
+    }
+    return false; // No long trades found
+}
+
+bool IsShortTradeOpen() {
+    for (int i = 0; i < PositionsTotal(); i++) {
+        ulong ticket = PositionGetTicket(i);
+        if (ticket > 0 && PositionGetInteger(POSITION_TYPE, ticket) == POSITION_TYPE_SELL) {
+            return true; // Long trade is already open
+        }
+    }    
+    return false; // No long trades found
+}
+
+int CheckTrades() {  
+    int totalTrades = 0;
+    string symb = "";
+    for (int i = 0; i < PositionsTotal(); i++) {
+        ulong ticket = PositionGetTicket(i);
+        symb = PositionGetSymbol(i);
+        if (ticket > 0 && symb == Symbol()) {
+            totalTrades++;
+        }
+    }
+    return totalTrades;
+}
+
+//Adjust Trailing Stop Loss based off ATR
+void AdjustTsl(ulong Ticket, double CurrentAtr, double AtrMulti, long magic, int checktrade)
+{
+   //Set symbol string and variables
+   string CurrentSymbol   = Symbol();
+   double Price           = 0.0;
+   double OptimalStopLoss = 0.0;  
+   Trade.SetExpertMagicNumber(magic);
+   //Check correct ticket number is selected for further position data to be stored. Return if error.
+   if (!PositionSelectByTicket(Ticket))
+      return;
+   if (checktrade == 1) {
+      //Store position data variables
+      ulong  PositionDirection = PositionGetInteger(POSITION_TYPE);
+      double CurrentStopLoss   = PositionGetDouble(POSITION_SL);
+      double CurrentTakeProfit = PositionGetDouble(POSITION_TP);
+      double priceOpen         = PositionGetDouble(POSITION_PRICE_OPEN);
+     
+      
+      //Check if position direction is long 
+      if (PositionDirection==POSITION_TYPE_BUY)
+      {
+         //Get optimal stop loss value
+         Price           = NormalizeDouble(SymbolInfoDouble(CurrentSymbol, SYMBOL_ASK), Digits());
+         OptimalStopLoss = NormalizeDouble(Price - CurrentAtr*AtrMulti, Digits());
+         
+         //Check if optimal stop loss is greater than current stop loss. If TRUE, adjust stop loss
+         if (priceOpen > CurrentStopLoss) {
+            Trade.PositionModify(Ticket,priceOpen,CurrentTakeProfit);
+         }else if(OptimalStopLoss > CurrentStopLoss) {
+            Trade.PositionModify(Ticket,OptimalStopLoss,CurrentTakeProfit);
+            Print("Ticket ", Ticket, " for symbol ", CurrentSymbol," stop loss adjusted to ", OptimalStopLoss);
+         }
+   
+         //Return once complete
+         return;
+      } 
+      
+      //Check if position direction is short 
+      if (PositionDirection==POSITION_TYPE_SELL)
+      {
+         //Get optimal stop loss value
+         Price           = NormalizeDouble(SymbolInfoDouble(CurrentSymbol, SYMBOL_BID), Digits());
+         OptimalStopLoss = NormalizeDouble(Price + CurrentAtr*AtrMulti, Digits());
+   
+         //Check if optimal stop loss is less than current stop loss. If TRUE, adjust stop loss
+         if (priceOpen < CurrentStopLoss) {
+            Trade.PositionModify(Ticket,priceOpen,CurrentTakeProfit);
+         }else if(OptimalStopLoss < CurrentStopLoss) {
+            Trade.PositionModify(Ticket,OptimalStopLoss,CurrentTakeProfit);
+            Print("Ticket ", Ticket, " for symbol ", CurrentSymbol," stop loss adjusted to ", OptimalStopLoss);
+         }
+         //Return once complete
+         return;
+      } 
+    }
 }
