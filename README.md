@@ -12,7 +12,7 @@ This is a discretionary startegy that relies on the MACD and EMA as entry signal
 //----Short Entry----//
 1) MACD line crosses below Signal Line and both lines are above the zero line
 2) EMA line acts as confirmation indicator where candle must close below EMA line
-3) If there is a dhort entry, first check if there are any trades open, if there is a long trade, close long trade and enter new trade. If there is a short trade, this short entry is considered invalid
+3) If there is a short entry, first check if there are any trades open, if there is a long trade, close long trade and enter new trade. If there is a short trade, this short entry is considered invalid
 4) Exit when MACD lines crosses above the signal Line 
 
 //----Trade Management----//
