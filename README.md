@@ -12,7 +12,7 @@ This is a discretionary startegy that relies on the MACD and EMA as entry signal
 //----Short Entry----//
 1) MACD line crosses below Signal Line and both lines are above the zero line
 2) EMA line acts as confirmation indicator where candle must close below EMA line
-3) If there is a dhort entry, first check if there are any trades open, if there is a long trade, close long trade and enter new trade. If there is a short trade, this short entry is considered invalid
+3) If there is a short entry, first check if there are any trades open, if there is a long trade, close long trade and enter new trade. If there is a short trade, this short entry is considered invalid
 4) Exit when MACD lines crosses above the signal Line 
 
 //----Trade Management----//
@@ -32,3 +32,4 @@ ATR based stop loss is used, where the stop loss is 1x ATR below entry price for
 
 //----Notes----//
 1) Trade is entered when a the previous candle closes and the new candle opens. Depending on your broker, the trading window is different from the candle opening time. This may cause an invalid trade entry when market is closed. A timer is added in the EA which can be adjust based on the difference in timing of candle open and trading Open.
+2) Trade can be entered immediately after a trade is exited
