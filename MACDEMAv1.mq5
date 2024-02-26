@@ -6,7 +6,7 @@
 //|                                                  Version Notes 1 |
 //| Skeleton of trading Strategy                                     |
 //| Fixing risk lots as JPY didn't enter                             |
-//| relook the KAMA for more accurate entries                        |
+//|                                                                  |
 //|                                                                  |
 //+------------------------------------------------------------------+
 //|                                                    Patch Notes 1 |
@@ -296,8 +296,6 @@ string GetMacdOpenSignal()
    double    CurrentSignal = NormalizeDouble(BufferSignal[1],10);
    double    PriorMacd     = NormalizeDouble(BufferMacd[0],10);
    double    PriorSignal   = NormalizeDouble(BufferSignal[0],10);
-   double    PriorClose = NormalizeDouble(iClose(Symbol(),Period(),2), 10);
-   double    CurrentClose = NormalizeDouble(iClose(Symbol(),Period(),1), 10);
  
    //Submit Macd Long and Short Trades
    //If MACD cross over Signal Line and cross occurs below 0 line - Long                                   
